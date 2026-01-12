@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js 塔罗星阵 (正反面修正版)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+        
+        #status-bar { 
+            position: absolute; top: 30px; left: 50%; transform: translateX(-50%); 
+            display: flex; gap: 20px; 
+            background: rgba(20,20,20,0.9); padding: 12px 30px; border-radius: 30px; 
+            border: 1px solid rgba(212, 175, 55, 0.5);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.8);
+        }
+        .status-icon { opacity: 0.3; transition: 0.2s; font-size: 18px; display: flex; align-items: center; gap: 8px; color: #888; }
+        .status-icon.active { opacity: 1; color: #d4af37; text-shadow: 0 0 10px #d4af37; transform: scale(1.15); font-weight: bold; }
+
+        #card-detail { 
+            position: absolute; bottom: 8%; left: 50%; transform: translateX(-50%); 
+            text-align: center; opacity: 0; transition: opacity 0.5s; 
+            width: 90%; max-width: 800px; pointer-events: none;
+        }
+        #card-name { font-size: 42px; font-weight: bold; color: #d4af37; letter-spacing: 3px; text-shadow: 0 4px 10px rgba(0,0,0,1); margin-bottom: 5px; font-family: 'Times New Roman', serif; }
+        #card-sub { font-size: 16px; color: #888; margin-bottom: 20px; letter-spacing: 2px; text-transform: uppercase; }
+        #card-desc { font-size: 20px; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.8); line-height: 1.6; background: linear-gradient(90deg, transparent, rgba(0,0,0,0.8), transparent); padding: 10px; }
+        
+        #burn-hint { margin-top: 10px; font-size: 14px; color: #ff6b6b; display: none; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+
+        #input-video { position: absolute; bottom: 10px; right: 10px; width: 120px; height: 90px; transform: scaleX(-1); opacity: 0; z-index: 0; pointer-events: none; transition: opacity 0.5s; }
+        #input-video.active { opacity: 0.3; }
+
+        #loading { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #d4af37; font-size: 18px; letter-spacing: 2px;
+            text-align: center; z-index: 20; background: rgba(0,0,0,0.9); padding: 40px; border-radius: 12px; border: 1px solid #d4af37;
+        }
+        
+        #deck-count { position: absolute; top: 30px; right: 30px; color: #444; font-size: 12px; font-family: monospace; }
+        #center-guide { position: absolute; top: 50%; left: 50%; width: 2px; height: 20px; background: rgba(255,255,255,0.1); transform: translate(-50%, -50%); pointer-events: none; }
+    </style>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <div id="loading">
+        🔮 命运之轮校准中...<br>
+        <span style="font-size:12px; color:#aaa; display:block; margin-top:15px;">
+            请将 tarot-card-back.jpg 放入同目录<br>
+            需使用 localhost 或 HTTPS 启动摄像头
+        </span>
+    </div>
+
+    <div id="canvas-container"></div>
+    <video id="input-video" playsinline></video>
+
+    <div id="ui-layer">
+        <div id="center-guide"></div>
+        <div id="status-bar">
+            <div id="icon-open" class="status-icon">🖐 <span>浏览</span></div>
+            <div id="icon-point" class="status-icon">☝ <span>瞄准</span></div>
+            <div id="icon-pinch" class="status-icon">👌 <span>抽取</span></div>
+            <div id="icon-fist" class="status-icon" style="display:none; color:#ff6b6b">✊ <span>销毁</span></div>
+        </div>
+        <div id="deck-count">CARDS: 78</div>
+
+        <div id="card-detail">
+            <div id="card-name">THE FOOL</div>
+            <div id="card-sub">Major Arcana</div>
+            <div id="card-desc"></div>
+            <div id="burn-hint">✊ 握拳以销毁卡牌并继续...</div>
+        </div>
+    </div>
+
+<script>
+// --- 配置 ---
+const CONFIG = {
+    spreadRadius: 20, 
+    spreadWidth: 3.5, 
+    scrollSpeed: 0.20, 
+    cursorSmooth: 0.2, 
+    cameraZ: 6.5 
+};
+
+// --- 塔罗数据 ---
+// --- 1. 定义大阿卡纳的基础信息 (去掉 url 字段，因为我们会自动生成) ---
+const MAJORS_INFO = [
+    { n: "愚者", e: "The Fool", m: "新的开始 · 冒险 · 纯真" },
+    { n: "魔术师", e: "The Magician", m: "创造力 · 意志 · 显化" },
+    { n: "女祭司", e: "The High Priestess", m: "直觉 · 神秘 · 潜意识" },
+    { n: "皇后", e: "The Empress", m: "丰饶 · 自然 · 母性" },
+    { n: "皇帝", e: "The Emperor", m: "权威 · 结构 · 控制" },
+    { n: "教皇", e: "The Hierophant", m: "传统 · 信仰 · 教育" },
+    { n: "恋人", e: "The Lovers", m: "爱 · 和谐 · 选择" },
+    { n: "战车", e: "The Chariot", m: "胜利 · 意志 · 自律" },
+    { n: "力量", e: "Strength", m: "勇气 · 耐心 · 同情" },
+    { n: "隐士", e: "The Hermit", m: "内省 · 孤独 · 指引" },
+    { n: "命运之轮", e: "Wheel of Fortune", m: "周期 · 变化 · 运气" },
+    { n: "正义", e: "Justice", m: "公平 · 真理 · 因果" },
+    { n: "倒吊人", e: "The Hanged Man", m: "牺牲 · 新视角 · 放手" },
+    { n: "死神", e: "Death", m: "结束 · 转变 · 重生" },
+    { n: "节制", e: "Temperance", m: "平衡 · 适度 · 融合" },
+    { n: "恶魔", e: "The Devil", m: "束缚 · 欲望 · 诱惑" },
+    { n: "高塔", e: "The Tower", m: "突变 · 混乱 · 觉醒" },
+    { n: "星星", e: "The Star", m: "希望 · 灵感 · 治愈" },
+    { n: "月亮", e: "The Moon", m: "幻觉 · 不安 · 潜意识" },
+    { n: "太阳", e: "The Sun", m: "快乐 · 成功 · 活力" },
+    { n: "审判", e: "Judgement", m: "复活 · 觉醒 · 召唤" },
+    { n: "世界", e: "The World", m: "完成 · 整合 · 圆满" }
+];
+
+// --- 2. 定义小阿卡纳的结构 ---
+const MINORS_SUITS = [
+    { id: 'wands', name: '权杖', key: '行动 火' }, // id 改为小写，方便做文件名
+    { id: 'cups', name: '圣杯', key: '情感 水' },
+    { id: 'swords', name: '宝剑', key: '思想 风' },
+    { id: 'pentacles', name: '星币', key: '物质 土' }
+];
+
+// id 对应文件名中的数字或名称 (例如 ace, 2, king)
+const MINORS_RANKS = [
+    { id: 'ace', cn: '首牌', m: '新开端' }, 
+    { id: '2', cn: '2', m: '平衡与决定' },
+    { id: '3', cn: '3', m: '合作' }, 
+    { id: '4', cn: '4', m: '稳定' },
+    { id: '5', cn: '5', m: '冲突' }, 
+    { id: '6', cn: '6', m: '胜利' },
+    { id: '7', cn: '7', m: '坚持' }, 
+    { id: '8', cn: '8', m: '变化' },
+    { id: '9', cn: '9', m: '韧性' }, 
+    { id: '10', cn: '10', m: '圆满' },
+    { id: 'page', cn: '侍从', m: '好奇' }, 
+    { id: 'knight', cn: '骑士', m: '行动' },
+    { id: 'queen', cn: '王后', m: '理解' }, 
+    { id: 'king', cn: '国王', m: '掌控' }
+];
+
+// --- 3. 自动生成完整牌库 TAROT_DB ---
+let TAROT_DB = [];
+
+// 生成大阿卡纳数据
+MAJORS_INFO.forEach((info, index) => {
+    TAROT_DB.push({
+        ...info,
+        type: 'Major Arcana',
+        // 规则：major_0.jpg, major_1.jpg ...
+        url: `major_${index}.jpg` 
+    });
+});
+
+// 生成小阿卡纳数据
+MINORS_SUITS.forEach(suit => {
+    MINORS_RANKS.forEach(rank => {
+        // 统一转为小写，方便文件名管理
+        const suitId = suit.id.toLowerCase(); // Wands -> wands
+        const rankId = rank.id.toLowerCase(); // 3 -> 3, Ace -> ace
+        
+        // 默认标准文件名：wands_ace.jpg, cups_3.jpg
+        let fileName = `${suitId}_${rankId}.jpg`;
+
+        // 【特殊拦截】：如果你非要用 "three of cups.jpeg" 这个名字，解开下面注释
+        // if (suitId === 'cups' && rankId === '3') {
+        //    fileName = 'three of cups.jpeg';
+        // }
+
+        TAROT_DB.push({
+            n: `${suit.name}${rank.cn}`,
+            e: `${rank.id} of ${suit.id}`,
+            m: `${suit.key} · ${rank.m}`,
+            type: 'Minor Arcana',
+            url: fileName
+        });
+    });
+});
+
+// getImg 保持不变，负责拼接 assets/
+const getImg = (path) => {
+    if (path.startsWith('http')) return path;
+    return `assets/${path}`;
+};
+
+/* SHADERS (Ash) */
+const ashVertexShader = `uniform float uTime; attribute float aRandom; attribute vec3 aColor; varying vec3 vColor; varying float vAlpha;
+vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;} vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;} vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);} vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+float snoise(vec3 v){ const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0); vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx); vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy); vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy; i=mod289(i); vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0)); float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx; vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_); vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y); vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw); vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0)); vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww; vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w); vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3))); p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w; vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m; return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3))); }
+void main(){ vColor=aColor; float t=uTime*(1.2+aRandom*0.5); vec3 noisePos=position*0.8+vec3(0.0,t*0.5,0.0); float noiseVal=snoise(noisePos); vec3 newPos=position; newPos.y+=t*0.8; newPos.x+=noiseVal*0.4*t; newPos.z+=noiseVal*0.3*t; vAlpha=1.0-(uTime*0.4); vec4 mvPosition=modelViewMatrix*vec4(newPos,1.0); gl_PointSize=(5.0*aRandom+2.0)*(1.0/-mvPosition.z); gl_Position=projectionMatrix*mvPosition; }`;
+const ashFragmentShader = `varying vec3 vColor; varying float vAlpha; void main(){ if(vAlpha<=0.0)discard; vec2 coord=gl_PointCoord-vec2(0.5); if(length(coord)>0.5)discard; gl_FragColor=vec4(vColor,vAlpha); }`;
+
+class TarotSpace {
+    constructor() {
+        this.container = document.getElementById('canvas-container');
+        this.w = window.innerWidth;
+        this.h = window.innerHeight;
+        this.cards = [];
+        this.particles = [];
+        this.state = 'browsing'; 
+        this.gestureMode = 'none'; 
+        this.scrollOffset = 0;
+        this.targetScrollOffset = 0;
+        this.hoveredCard = null;
+        this.revealedCard = null;
+        this.handPos = { x: 0, y: 0 };
+        this.cursorPos = new THREE.Vector2(0,0);
+        this.targetCursorPos = new THREE.Vector2(0,0);
+        this.texLoader = new THREE.TextureLoader();
+        this.texLoader.setCrossOrigin('anonymous');
+        
+        this.initThree();
+        this.backTexture = this.generateCardTexture(); // 先用生成的黑色占位
+        this.loadLocalBack(); // 异步加载图片
+
+        this.initCards();
+        this.initCursor();
+        this.initBackgroundStars();
+        this.initMediaPipe();
+        this.initMouse();
+        this.animate();
+    }
+
+    generateCardTexture() {
+        const c = document.createElement('canvas');
+        c.width = 256; c.height = 400; const ctx = c.getContext('2d');
+        ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0,0,256,400);
+        ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 10; ctx.strokeRect(10,10,236,380);
+        ctx.beginPath(); ctx.arc(128, 200, 60, 0, Math.PI*2); ctx.stroke();
+        return new THREE.CanvasTexture(c);
+    }
+
+    loadLocalBack() {
+        this.texLoader.load('tarot-card-back.jpg', (tex) => {
+            tex.encoding = THREE.sRGBEncoding;
+            this.backTexture = tex;
+            // 更新所有卡牌的背面 (Mesh index 0)
+            this.cards.forEach(group => {
+                const backMesh = group.children[0];
+                backMesh.material.map = tex;
+                backMesh.material.emissive = 0x000000;  // 确保没有自发光
+                backMesh.material.needsUpdate = true;
+            });
+        });
+    }
+
+    createFrontTexture(data) {
+        const c = document.createElement('canvas'); c.width = 512; c.height = 800; const ctx = c.getContext('2d');
+        ctx.fillStyle = '#f5f0e1'; ctx.fillRect(0,0,512,800); ctx.strokeStyle = '#333'; ctx.lineWidth = 15; ctx.strokeRect(20,20,472,760);
+        ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.font = 'bold 50px serif'; ctx.fillText(data.e, 256, 300); ctx.font = '30px sans-serif'; ctx.fillStyle = '#555'; ctx.fillText(data.n, 256, 360);
+        return new THREE.CanvasTexture(c);
+    }
+
+    initThree() {
+        this.scene = new THREE.Scene(); this.scene.fog = new THREE.FogExp2(0x000000, 0.02);
+        this.camera = new THREE.PerspectiveCamera(60, this.w/this.h, 0.1, 100); this.camera.position.set(0, 0, CONFIG.cameraZ);
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }); this.renderer.setSize(this.w, this.h);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); this.renderer.outputEncoding = THREE.sRGBEncoding;
+        this.container.appendChild(this.renderer.domElement);
+        this.scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+    }
+
+    initBackgroundStars() {
+        const count = 800; const geo = new THREE.BufferGeometry(); const pos = [];
+        for(let i=0; i<count; i++) pos.push((Math.random()-0.5)*120, (Math.random()-0.5)*80, (Math.random()-0.5)*60-30);
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        this.bgStars = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x666666, size: 2, sizeAttenuation: false }));
+        this.scene.add(this.bgStars);
+    }
+
+    initCards() {
+        const geo = new THREE.PlaneGeometry(2.0, 3.2);
+        const count = TAROT_DB.length;
+
+        // 【关键修复】：关闭 DoubleSide，改为 FrontSide (仅正面可见)
+        const backMat = new THREE.MeshBasicMaterial({ 
+            map: this.backTexture, 
+            side: THREE.FrontSide,
+            emissive: 0x000000  // 确保没有自发光
+        });
+        const frontMat = new THREE.MeshBasicMaterial({ 
+            color: 0x111111, 
+            side: THREE.FrontSide 
+        });
+
+        for (let i = 0; i < count; i++) {
+            const group = new THREE.Group();
+            
+            // 牌背：面向摄像机 (rotation.y = 0)
+            const back = new THREE.Mesh(geo, backMat);
+            back.position.z = 0.01;
+            back.rotation.y = 0; 
+            
+            // 牌面：背对摄像机 (rotation.y = Math.PI 即 180度)
+            const front = new THREE.Mesh(geo, frontMat);
+            front.position.z = -0.01; 
+            front.rotation.y = Math.PI;
+
+            group.add(back);
+            group.add(front);
+            
+            // 初始 Group 面向摄像机，看到的是 back (牌背)
+            group.userData = { id: i, info: TAROT_DB[i], baseX: (i - count/2) * CONFIG.spreadWidth };
+            this.scene.add(group);
+            this.cards.push(group);
+        }
+    }
+
+    initCursor() {
+        this.cursorMesh = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.15, 32), new THREE.MeshBasicMaterial({ color: 0xd4af37, transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
+        this.cursorMesh.visible = false; this.scene.add(this.cursorMesh);
+        this.raycaster = new THREE.Raycaster();
+    }
+
+    updateLayout() {
+        if (this.state === 'revealed' || this.state === 'burning') return;
+        this.scrollOffset += (this.targetScrollOffset - this.scrollOffset) * 0.1;
+
+        this.cards.forEach((card) => {
+            const worldX = card.userData.baseX + this.scrollOffset;
+            const dist = Math.abs(worldX);
+            if (dist > 8.0) { card.visible = false; return; }
+            card.visible = true;
+
+            card.position.x = worldX;
+            card.position.z = -Math.pow(dist * 0.25, 1.5);
+            // 旋转逻辑：
+            // 当牌在中间(worldX=0)时，rotation.y = 0。
+            // 此时 BackMesh (rot=0) 正对摄像机，FrontMesh (rot=PI) 背对摄像机。正确！
+            card.rotation.y = Math.max(-0.5, Math.min(0.5, -worldX * 0.06));
+
+            if (this.state === 'focusing' && this.hoveredCard === card) {
+                card.scale.setScalar(1.1); card.position.z += 1.5; card.rotation.y = 0;
+            } else {
+                card.scale.setScalar(1.0);
+            }
+        });
+    }
+
+    handleGestures() {
+        if (this.state === 'burning') return;
+        document.querySelectorAll('.status-icon').forEach(el => el.classList.remove('active'));
+        if(this.gestureMode !== 'none') document.getElementById('icon-'+this.gestureMode)?.classList.add('active');
+
+        if (this.state === 'browsing' || this.state === 'focusing') {
+            if (this.gestureMode === 'open') {
+                if (Math.abs(this.handPos.x) > 0.3) {
+                    const speed = CONFIG.scrollSpeed;
+                    if (this.handPos.x < 0) this.targetScrollOffset += speed * (Math.abs(this.handPos.x)*2);
+                    else this.targetScrollOffset -= speed * (Math.abs(this.handPos.x)*2);
+                    const limit = (TAROT_DB.length/2)*CONFIG.spreadWidth + 2;
+                    this.targetScrollOffset = Math.max(-limit, Math.min(limit, this.targetScrollOffset));
+                    this.state = 'browsing'; this.cursorMesh.visible = false; this.hoveredCard = null;
+                }
+            } 
+            else if (this.gestureMode === 'point' || this.gestureMode === 'pinch') {
+                this.state = 'focusing'; this.cursorMesh.visible = true;
+                this.cursorPos.lerp(this.targetCursorPos, CONFIG.cursorSmooth);
+                const vec = new THREE.Vector3(this.cursorPos.x, this.cursorPos.y, 0.5); vec.unproject(this.camera);
+                const dir = vec.sub(this.camera.position).normalize();
+                const pos = this.camera.position.clone().add(dir.multiplyScalar(-this.camera.position.z/dir.z));
+                this.cursorMesh.position.copy(pos);
+                this.raycaster.setFromCamera(this.cursorPos, this.camera);
+                const intersects = this.raycaster.intersectObjects(this.cards.filter(c => c.visible), true);
+                if (intersects.length > 0) {
+                    let target = intersects[0].object; while(target.parent && !target.userData.id) target = target.parent;
+                    this.hoveredCard = target;
+                } else this.hoveredCard = null;
+
+                if (this.gestureMode === 'pinch' && this.hoveredCard) this.revealCard(this.hoveredCard);
+            }
+        } else if (this.state === 'revealed' && this.gestureMode === 'fist') this.burnCard();
+    }
+
+    revealCard(cardGroup) {
+        if (this.state === 'revealed') return;
+        this.state = 'revealed';
+        this.revealedCard = cardGroup;
+        this.cursorMesh.visible = false;
+        
+        document.getElementById('icon-fist').style.display = 'flex';
+        document.getElementById('burn-hint').style.display = 'block';
+
+        const data = cardGroup.userData.info;
+        const frontMesh = cardGroup.children[1]; // 获取牌面 Mesh
+        
+        // 准备一个白底材质来接收图片，同样只渲染单面
+        frontMesh.material = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.FrontSide });
+
+        // 加载图片
+        this.texLoader.load(
+            getImg(data.url),
+            (tex) => { 
+                // 成功：贴上你的 cups_3.jpg
+                tex.encoding = THREE.sRGBEncoding;
+                frontMesh.material.map = tex; 
+                frontMesh.material.needsUpdate = true; 
+            },
+            undefined,
+            () => { 
+                // 失败：才会使用文字版
+                frontMesh.material.map = this.createFrontTexture(data); 
+                frontMesh.material.needsUpdate = true; 
+            }
+        );
+
+        // 动画：翻转展示
+        // 原来是 0度，现在转到 Math.PI (180度)，此时牌面(FrontMesh)正好转过来朝向摄像机
+        new TWEEN.Tween(cardGroup.position)
+            .to({ x: 0, y: 0, z: CONFIG.cameraZ - 3.5 }, 1000)
+            .easing(TWEEN.Easing.Cubic.Out).start();
+
+        new TWEEN.Tween(cardGroup.rotation)
+            .to({ x: 0, y: Math.PI, z: 0 }, 1000)
+            .easing(TWEEN.Easing.Back.Out).start();
+
+        // 隐藏其他卡牌
+        this.cards.forEach(c => {
+            if (c !== cardGroup) {
+                new TWEEN.Tween(c.position).to({ z: -50 }, 800).start();
+            }
+        });
+
+        // 显示文字 UI
+        setTimeout(() => {
+            document.getElementById('card-name').innerText = data.n;
+            document.getElementById('card-sub').innerText = data.type;
+            document.getElementById('card-desc').innerText = data.m;
+            document.getElementById('card-detail').style.opacity = 1;
+        }, 800);
+    }
+
+    burnCard() {
+        if (!this.revealedCard || this.state === 'burning') return;
+        this.state = 'burning';
+        this.createAshEffect(this.revealedCard.position);
+        this.revealedCard.visible = false; this.scene.remove(this.revealedCard);
+        const idx = this.cards.indexOf(this.revealedCard); if (idx > -1) this.cards.splice(idx, 1);
+        this.revealedCard = null;
+        document.getElementById('card-detail').style.opacity = 0; document.getElementById('burn-hint').style.display = 'none';
+        document.getElementById('icon-fist').style.display = 'none'; document.getElementById('deck-count').innerText = "CARDS: " + this.cards.length;
+        setTimeout(() => { this.state = 'browsing'; }, 2000);
+    }
+
+    createAshEffect(pos) {
+        const count = 5000; const geo = new THREE.BufferGeometry(); const positions = [], randoms = [], colors = []; const color = new THREE.Color();
+        for(let i=0; i<count; i++) { positions.push((Math.random()-0.5)*2.0, (Math.random()-0.5)*3.2, 0); randoms.push(Math.random()); if(Math.random()>0.5) color.setHex(0xd4af37); else color.setHex(0xaaaaaa); colors.push(color.r, color.g, color.b); }
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); geo.setAttribute('aRandom', new THREE.Float32BufferAttribute(randoms, 1)); geo.setAttribute('aColor', new THREE.Float32BufferAttribute(colors, 3));
+        const material = new THREE.ShaderMaterial({ vertexShader: ashVertexShader, fragmentShader: ashFragmentShader, uniforms: { uTime: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+        const points = new THREE.Points(geo, material); points.position.copy(pos); this.scene.add(points); this.particles.push({ mesh: points, age: 0 });
+    }
+
+    initMediaPipe() {
+        const vid = document.getElementById('input-video'); const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+        hands.onResults(results => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const lm = results.multiHandLandmarks[0]; const idx = lm[8], thb = lm[4], wrs = lm[0], mid = lm[12], rng = lm[16], pnk = lm[20];
+                this.handPos.x = (1 - lm[9].x) * 2 - 1; this.targetCursorPos.x = (1 - idx.x) * 2 - 1; this.targetCursorPos.y = -(idx.y * 2 - 1);
+                const dist = (a, b) => Math.sqrt(Math.pow(a.x-b.x,2) + Math.pow(a.y-b.y,2));
+                const pinchDist = dist(idx, thb);
+                const isFist = dist(mid, wrs)<0.25 && dist(rng, wrs)<0.25 && dist(pnk, wrs)<0.25 && dist(idx, wrs)<0.25;
+                const isPinch = pinchDist < 0.05;
+                const isPoint = dist(idx, wrs)>0.3 && dist(mid, wrs)<0.25; 
+                const isOpen = dist(idx, wrs)>0.3 && dist(mid, wrs)>0.3 && dist(rng, wrs)>0.3 && dist(pnk, wrs)>0.3;
+                if (isFist) this.gestureMode = 'fist'; else if (isPinch) this.gestureMode = 'pinch'; else if (isPoint) this.gestureMode = 'point'; else if (isOpen) this.gestureMode = 'open'; else this.gestureMode = 'none';
+            } else this.gestureMode = 'none';
+        });
+        const camera = new Camera(vid, { onFrame: async () => { await hands.send({image: vid}); }, width: 320, height: 240 });
+        camera.start().then(() => { document.getElementById('loading').style.display = 'none'; vid.classList.add('active'); });
+    }
+
+    initMouse() {
+        window.addEventListener('mousemove', e => { const x = (e.clientX/this.w)*2-1; const y = -(e.clientY/this.h)*2+1; this.handPos.x = x; this.targetCursorPos.set(x, y); if (Math.abs(x)>0.4) this.gestureMode='open'; else this.gestureMode='point'; });
+        window.addEventListener('mousedown', e => { if(e.button===2) this.gestureMode='fist'; else if(this.gestureMode==='point') this.gestureMode='pinch'; });
+        window.addEventListener('mouseup', () => { this.gestureMode='point'; }); window.addEventListener('contextmenu', e => e.preventDefault());
+    }
+
+    animate() {
+        requestAnimationFrame(() => this.animate()); TWEEN.update(); this.updateLayout(); this.handleGestures();
+        if(this.bgStars) this.bgStars.rotation.y += 0.0002;
+        for (let i = this.particles.length - 1; i >= 0; i--) { const p = this.particles[i]; p.age += 0.02; p.mesh.material.uniforms.uTime.value = p.age; if (p.age > 2.5) { this.scene.remove(p.mesh); this.particles.splice(i, 1); } }
+        this.renderer.render(this.scene, this.camera);
+    }
+}
+window.onload = () => new TarotSpace();
+</script>
+</body>
+</html>
