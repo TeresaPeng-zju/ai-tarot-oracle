@@ -207,7 +207,7 @@
 
 <script>
 const CONFIG = { spreadRadius: 22, spreadWidth: 3.5, scrollSpeed: 0.08, cursorSmooth: 0.15, cameraZ: 6.5 };
-const AURA_PARAMS = { count: 3000, radiusX: 1.2, radiusY: 1.8, width: 0.3, size: 0.04, color: '#ffffff', speed: 0.02, opacity: 0.8 };
+const AURA_PARAMS = { count: 3000, radiusX: 1.2, radiusY: 1.8, width: 0.3, size: 0.04, color: '#ffffff', speed: 0.02, opacity: 0.8, zOffset: 0.2 };
 
 // DeepSeek API 配置
 // 方式1：使用后端代理（推荐，更安全）
@@ -245,26 +245,61 @@ function shuffleDeck(array) {
 
 /**
  * 按照塔罗规则创建并洗牌
- * 模拟真实塔罗实践：在洗牌过程中翻转一些牌
- * - 使用30%-60%之间的逆位率（每轮可变化，创造"命运氛围"）
+ * 模拟真实塔罗实践：通过物理洗牌过程翻转牌
+ * - 模拟揉牌、切牌等动作，牌成片翻转而非独立随机
  * - 洗牌完成后，每张牌的方向固定，抽牌时不再随机
+ * - 自然产生约25%-45%的逆位率，小牌逆位率略高于大牌
  */
-function createTarotDeck(rawDeck) {
-    // 1. 先洗牌，随机化牌的顺序（Fisher-Yates算法）
-    const shuffled = shuffleDeck(rawDeck);
+ function createTarotDeck(rawDeck) {
+    console.log('开始塔罗洗牌...');
     
-    // 2. 确定本轮洗牌的逆位率（30%-60%之间，创造"命运氛围"）
-    // 每轮游戏可能不同的逆位率，让某些轮自然包含更多逆位牌
-    const reversedRate = 0.3 + Math.random() * 0.3; // 0.3 到 0.6 之间
-    
-    // 3. 为每张牌分配固定的方向（在洗牌阶段确定，而不是抽牌时）
-    // 模拟洗牌过程中某些牌被翻转的情况
-    const deck = shuffled.map(card => ({
+    // 1. 从原始牌组创建副本，并确保所有牌初始为正位
+    let deck = rawDeck.map(card => ({
         ...card,
-        isReversed: Math.random() < reversedRate // 根据逆位率决定是否逆位
+        isReversed: false  // 重置为正位，开始新的洗牌周期
     }));
     
-    // 4. 方向已固定，返回洗好的牌组
+    // 2. 先打乱顺序
+    deck = shuffleDeck(deck);
+    
+    // 3. 模拟物理洗牌：牌是成片翻转的，不是每张独立
+    const segmentCount = 8 + Math.floor(Math.random() * 8); // 8-15段
+
+    for (let i = 0; i < deck.length; i++) {
+    // 每段的开始决定是否翻转这一段
+        if (i % Math.floor(deck.length / segmentCount) === 0) {
+            const flipThisSegment = Math.random() < 0.4; // 40%的段会翻转
+            
+            if (flipThisSegment) {
+                // 翻转这一段（约5-10张牌）← 保持原来的随机段大小
+                const segmentSize = 5 + Math.floor(Math.random() * 6);
+                for (let j = i; j < Math.min(i + segmentSize, deck.length); j++) {
+                    deck[j].isReversed = !deck[j].isReversed;
+                }
+                i += segmentSize - 1;
+            }
+        }
+    }
+    
+    // 4. 模拟切牌动作（可能翻转一堆牌）
+    const cutPoint = Math.floor(deck.length * (0.3 + Math.random() * 0.4));
+    if (Math.random() < 0.5) { // 50%的几率切牌时翻转一部分
+        const pileToFlip = Math.random() < 0.5 ? 
+            deck.slice(0, cutPoint) : 
+            deck.slice(cutPoint);
+        
+        pileToFlip.forEach(card => {
+            card.isReversed = !card.isReversed;
+        });
+    }
+    
+    // 5. 最后轻微调整（最上面几张可能翻转）
+    const topFlipCount = Math.floor(Math.random() * 4);
+    for (let i = 0; i < topFlipCount; i++) {
+        deck[i].isReversed = !deck[i].isReversed;
+    }
+    
+    console.log('洗牌完成');
     return deck;
 }
 
@@ -375,7 +410,7 @@ class TarotSpace {
 
         this.initCards(); // 初始化时不显示，等待 start
         this.initCursor(); 
-        this.initAura();   
+        // this.initAura();   
         this.initBackgroundStars();
         this.initMediaPipe();
         this.initMouse();
@@ -560,7 +595,17 @@ class TarotSpace {
         }, undefined, (err) => console.warn("未找到牌背图片:", backPath, err)); 
     }
     createFrontTexture(data) { const c = document.createElement('canvas'); c.width = 512; c.height = 800; const ctx = c.getContext('2d'); ctx.fillStyle = '#f5f0e1'; ctx.fillRect(0,0,512,800); ctx.strokeStyle = '#333'; ctx.lineWidth = 15; ctx.strokeRect(20,20,472,760); ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.font = 'bold 50px serif'; ctx.fillText(data.e, 256, 300); ctx.font = '30px sans-serif'; ctx.fillStyle = '#555'; ctx.fillText(data.n, 256, 360); return new THREE.CanvasTexture(c); }
-    initThree() { this.scene = new THREE.Scene(); this.camera = new THREE.PerspectiveCamera(60, this.w/this.h, 0.1, 100); this.camera.position.set(0, 0, CONFIG.cameraZ); this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }); this.renderer.setSize(this.w, this.h); this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); this.renderer.outputEncoding = THREE.LinearEncoding; this.container.appendChild(this.renderer.domElement); this.scene.add(new THREE.AmbientLight(0xffffff, 1.0)); }
+    initThree() { this.scene = new THREE.Scene(); this.camera = new THREE.PerspectiveCamera(60, this.w/this.h, 0.1, 100); this.camera.position.set(0, 0, CONFIG.cameraZ); this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }); this.renderer.setSize(this.w, this.h); this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); this.renderer.outputEncoding = THREE.LinearEncoding; this.container.appendChild(this.renderer.domElement); this.scene.add(new THREE.AmbientLight(0xffffff, 1.0)); this.preloadCardImages(); }
+    preloadCardImages() {
+        const basePath = getBasePath();
+        const uniqueImages = [...new Set(this.tarotDeck.map(card => card.url))];
+        
+        uniqueImages.forEach(url => {
+            const img = new Image();
+            img.src = getImg(url);
+            img.onload = () => console.log(`预加载: ${url}`);
+        });
+    }
     initBackgroundStars() { const count = 1500; const geo = new THREE.BufferGeometry(); const pos = []; for(let i=0; i<count; i++) pos.push((Math.random()-0.5)*150, (Math.random()-0.5)*100, (Math.random()-0.5)*80-40); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); const mat = new THREE.PointsMaterial({ color: 0x888888, size: 2, sizeAttenuation: false, transparent: true, opacity: 0.8 }); this.bgStars = new THREE.Points(geo, mat); this.scene.add(this.bgStars); }
     initAura() { const pCount = AURA_PARAMS.count; const geo = new THREE.BufferGeometry(); const pos = []; for(let i=0; i<pCount; i++) { const th = Math.random() * Math.PI * 2; const rx = AURA_PARAMS.radiusX + Math.random() * AURA_PARAMS.width; const ry = AURA_PARAMS.radiusY + Math.random() * AURA_PARAMS.width; pos.push(Math.cos(th)*rx, Math.sin(th)*ry, (Math.random()-0.5)*0.5); } geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); const mat = new THREE.PointsMaterial({ color: AURA_PARAMS.color, size: AURA_PARAMS.size, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }); this.aura = new THREE.Points(geo, mat); this.scene.add(this.aura); }
     updateAura() { if(!this.aura) return; this.aura.rotation.z += AURA_PARAMS.speed; if (this.gestureState === 'browsing' && this.hoveredCard) { this.aura.position.copy(this.hoveredCard.position); this.aura.position.z += AURA_PARAMS.zOffset; this.aura.rotation.y = this.hoveredCard.rotation.y; this.aura.material.opacity += (AURA_PARAMS.opacity - this.aura.material.opacity) * 0.1; } else { this.aura.material.opacity += (0 - this.aura.material.opacity) * 0.2; } }
@@ -613,6 +658,16 @@ class TarotSpace {
 
     handleGestures() {
         if (this.gameState !== 'playing') return;
+        // 添加微妙的颜色变化提示
+        const statusItems = document.querySelectorAll('.status-item');
+            statusItems.forEach(item => {
+                if (item.classList.contains('active')) {
+                    item.style.textShadow = '0 0 20px rgba(212, 175, 55, 0.8)';
+                } else {
+                    item.style.textShadow = 'none';
+                }
+            });
+
         if (this.gestureState === 'burning') return;
         
         ['st-browse', 'st-grab', 'st-release'].forEach(id => document.getElementById(id).classList.remove('active'));
@@ -725,8 +780,14 @@ class TarotSpace {
             console.log('Loading history image:', fullPath); // 调试信息
             // 添加错误处理，加载失败时显示占位符
             img.onerror = function() {
-                console.warn(`图片加载失败: ${fullPath}`, '尝试的URL:', imgUrl);
-                this.style.display = 'none'; // 隐藏失败的图片，或显示占位符
+                console.warn(`图片加载失败: ${fullPath}`);
+                // 显示一个简单的占位符
+                this.style.display = 'none';
+                // 或者在imgBox中显示一个占位符div
+                const placeholder = document.createElement('div');
+                placeholder.style.cssText = 'width:100%;height:100%;background:rgba(212,175,55,0.1);display:flex;align-items:center;justify-content:center;';
+                placeholder.innerHTML = '?';
+                imgBox.appendChild(placeholder);
             };
         } else {
             // 如果没有URL，创建一个透明的占位符

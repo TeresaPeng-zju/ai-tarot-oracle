@@ -1,44 +1,87 @@
 # 🔮 AI 塔罗星阵
 
-一个基于 Three.js 和 MediaPipe 的交互式塔罗牌应用，支持手势控制和鼠标操作。
+一个基于 Three.js 和 MediaPipe 的交互式塔罗牌应用，支持手势控制和鼠标操作，集成 DeepSeek AI 进行塔罗牌解读。
+
+## ✨ 功能特性
+
+- 🎴 **完整的塔罗牌系统**：78 张标准塔罗牌（22 张大阿卡纳 + 56 张小阿卡纳）
+- 🎯 **真实塔罗规则**：按照传统塔罗洗牌规则，每轮游戏有 30%-60% 的逆位率
+- 🤚 **手势识别控制**：使用 MediaPipe 实现手势控制（张开手掌、握拳、指向等）
+- 🖱️ **鼠标操作支持**：如果摄像头不可用，可以使用鼠标进行操作
+- 🤖 **AI 塔罗解读**：集成 DeepSeek API，为抽取的卡牌提供专业的塔罗解读
+- 🌌 **3D 视觉效果**：使用 Three.js 打造沉浸式的星空和卡牌展示体验
 
 ## 📁 项目结构
 
 ```
 AI塔罗/
-├── index.html              # HTML 入口文件
-├── src/                    # 源代码目录
-│   ├── main.ts            # 主应用逻辑（TypeScript）
-│   ├── styles.less        # 样式文件（LESS）
-│   ├── config.ts          # 配置常量
-│   ├── data.ts            # 塔罗牌数据
-│   ├── shaders.ts         # 着色器代码
-│   └── types.d.ts         # TypeScript 类型声明
-├── tarot-card-back.jpg    # 卡牌背面图片
-├── package.json           # 项目配置
-├── tsconfig.json          # TypeScript 配置
-└── vite.config.js         # Vite 配置
+├── index.html              # 主应用文件（包含所有逻辑）
+├── server.js               # 后端代理服务器（用于保护 API Key）
+├── tarot-card-back.jpg     # 卡牌背面图片
+├── assets/                 # 卡牌图片资源（79 张图片）
+│   ├── major_0.jpg ~ major_21.jpg
+│   └── [各花色卡牌图片]
+├── package.json            # 项目配置和依赖
+├── vite.config.js          # Vite 构建配置
+├── BACKEND_SETUP.md        # 后端设置详细说明
+└── README.md               # 本文件
 ```
 
 ## 🚀 快速开始
 
-### 安装依赖
+### 1. 安装依赖
 
 ```bash
 npm install
 ```
 
-### 启动开发服务器
+### 2. 配置后端 API（可选但推荐）
 
+如果你想要使用 AI 塔罗解读功能，需要配置 DeepSeek API：
+
+1. 创建 `.env` 文件（在项目根目录）：
+   ```env
+   DEEPSEEK_API_KEY=sk-your-api-key-here
+   PORT=3001
+   ```
+
+2. 从 [DeepSeek](https://platform.deepseek.com/) 获取 API Key
+
+> 📖 详细的后端设置说明请参考 [BACKEND_SETUP.md](./BACKEND_SETUP.md)
+
+### 3. 启动应用
+
+#### 方式 1：同时启动前后端（推荐）
+
+```bash
+npm run dev:full
+```
+
+这会同时启动：
+- 后端代理服务器（端口 3001）
+- 前端开发服务器（端口 8000）
+
+#### 方式 2：分别启动
+
+**终端 1 - 启动后端：**
+```bash
+npm run server
+```
+
+**终端 2 - 启动前端：**
 ```bash
 npm run dev
 ```
+
+### 4. 访问应用
 
 浏览器会自动打开 `http://localhost:8000`，开始你的塔罗之旅！
 
 ## 📋 可用命令
 
-- `npm run dev` - 启动开发服务器（支持热重载）
+- `npm run dev` - 启动前端开发服务器（端口 8000）
+- `npm run server` - 启动后端代理服务器（端口 3001）
+- `npm run dev:full` - 同时启动前后端服务器（推荐）
 - `npm run build` - 构建生产版本
 - `npm run preview` - 预览构建后的版本
 
@@ -46,65 +89,138 @@ npm run dev
 
 ### 手势控制
 
-- **🖐 张开手掌（Open）**：左右移动手掌来浏览卡牌堆
-- **☝ 伸出食指（Point）**：瞄准卡牌，光标会跟随手指
-- **👌 捏合（Pinch）**：抽取并查看选中的卡牌
-- **✊ 握拳（Fist）**：销毁当前显示的卡牌，继续下一张
+应用支持以下手势（需要摄像头权限）：
+
+- **🖐 张开手掌（Open）**：
+  - 左右移动手掌来浏览卡牌堆
+  - 手掌在屏幕中央时，显示光标并可以瞄准卡牌
+  
+- **☝ 伸出食指（Point）**：
+  - 瞄准卡牌，光标会跟随手指移动
+  - 可用于精确选择卡牌
+
+- **✊ 握拳（Fist）**：
+  - 在瞄准模式下，握拳可以抽取选中的卡牌
+  - 查看卡牌后，再次张开手掌可以将卡牌归位
 
 ### 鼠标操作
+
+如果摄像头不可用，可以使用鼠标操作：
 
 - **移动鼠标**：控制光标位置
 - **左右移动**：当鼠标移到屏幕边缘时，可以滚动浏览卡牌
 - **左键点击**：在瞄准模式下点击抽取卡牌
-- **右键点击**：销毁当前卡牌（模拟握拳手势）
+- **鼠标移动**：模拟手势的张开/指向状态
+
+## 🔮 游戏流程
+
+1. **提问阶段**：在初始界面输入你的问题（或留白）
+2. **抽牌阶段**：使用手势或鼠标浏览牌堆，抽取 3 张卡牌
+3. **查看卡牌**：每次抽取后查看卡牌的正/逆位信息
+4. **AI 解读**：抽取完 3 张牌后，系统会调用 AI 为你提供专业的塔罗解读
 
 ## ⚙️ 技术栈
 
-- **Three.js** - 3D 图形渲染
-- **MediaPipe** - 手势识别
-- **TypeScript** - 类型安全的 JavaScript
-- **LESS** - CSS 预处理器
+- **Three.js** - 3D 图形渲染引擎
+- **MediaPipe Hands** - 手势识别库
+- **TWEEN.js** - 动画补间库
+- **DeepSeek API** - AI 塔罗解读服务
+- **Express.js** - 后端代理服务器
 - **Vite** - 现代化构建工具
 
 ## 🔧 故障排除
 
-### 摄像头无法启动
+### API 调用失败（"Failed to fetch"）
 
-- ✅ 确保使用 `localhost` 访问（Vite 默认已配置）
-- ✅ 检查浏览器权限，允许访问摄像头
-- ✅ 如果摄像头不可用，可以使用鼠标操作
+- ✅ **确保后端服务器正在运行**：
+  - 运行 `npm run dev:full` 或分别启动前后端
+  - 检查终端是否有 `🚀 后端代理服务器运行在 http://localhost:3001` 的提示
+  - 访问 `http://localhost:3001/health` 应该返回 `{"status":"ok"}`
+
+- ✅ **检查 API Key 配置**：
+  - 确保 `.env` 文件存在且包含正确的 `DEEPSEEK_API_KEY`
+  - 检查 API Key 是否有效
+
+### 手势识别无法使用
+
+- ✅ **确保使用开发服务器运行**：
+  - 必须使用 `npm run dev` 启动，不能直接双击打开 HTML 文件
+  - 浏览器必须通过 `http://localhost:8000` 访问（不能是 `file://` 协议）
+
+- ✅ **检查摄像头权限**：
+  - 浏览器会弹出权限请求，点击"允许"访问摄像头
+  - 检查浏览器设置中是否允许该网站访问摄像头
+  - 确保没有其他应用占用摄像头
+
+- ✅ **降级使用鼠标操作**：
+  - 如果摄像头不可用，应用会自动降级到鼠标操作模式
+  - 所有功能都可以通过鼠标完成
 
 ### 端口被占用
 
-如果 8000 端口被占用，可以修改 `vite.config.js` 中的 `port` 配置。
+- 如果 8000 端口被占用，可以修改 `vite.config.js` 中的 `port` 配置
+- 如果 3001 端口被占用，可以修改 `.env` 文件中的 `PORT` 值
 
-### 首次运行
+### 图片加载失败
 
-首次运行需要执行 `npm install` 安装依赖。
+- ✅ **确保资源文件完整**：
+  - `assets/` 目录应包含所有卡牌图片
+  - `tarot-card-back.jpg` 文件应在项目根目录
 
-### 类型错误
+- ✅ **部署时的路径问题**：
+  - 如果部署到 CDN 或子目录，可能需要配置 `<base>` 标签
+  - 详细说明见 `index.html` 中的注释
 
-如果遇到 TypeScript 类型错误，请确保：
-- 已安装所有依赖：`npm install`
-- TypeScript 版本兼容：项目使用 TypeScript 5.3+
+### 首次运行问题
+
+- ✅ **安装依赖**：首次运行需要执行 `npm install`
+- ✅ **检查 Node.js 版本**：建议使用 Node.js 16+ 版本
+
+## 🌐 部署说明
+
+### 部署到 EdgeOne（或其他 CDN）
+
+1. **构建项目**：
+   ```bash
+   npm run build
+   ```
+
+2. **部署 `dist` 目录**：
+   - 将 `dist` 目录的内容上传到 CDN
+   - 确保所有资源路径正确
+
+3. **后端服务器**：
+   - 后端服务器需要单独部署（如 Vercel、Railway 等）
+   - 在部署平台设置环境变量 `DEEPSEEK_API_KEY`
+   - 修改前端配置中的 `proxyURL` 为生产环境的后端地址
+
+> 📖 详细的部署说明请参考 [BACKEND_SETUP.md](./BACKEND_SETUP.md)
 
 ## 📝 开发说明
 
-### 代码组织
+### 核心文件
 
-- **main.ts** - 包含 `TarotSpace` 类，负责应用的核心逻辑
-- **data.ts** - 塔罗牌数据定义（22 张大阿卡纳 + 56 张小阿卡纳）
-- **config.ts** - 应用配置常量
-- **shaders.ts** - WebGL 着色器代码（用于灰烬粒子效果）
-- **styles.less** - 全局样式
+- **index.html** - 包含所有前端逻辑：
+  - 塔罗牌数据定义
+  - Three.js 场景和渲染
+  - MediaPipe 手势识别
+  - DeepSeek API 调用
+  - UI 交互逻辑
 
-### 修改配置
+- **server.js** - 后端代理服务器：
+  - 保护 DeepSeek API Key
+  - 处理 API 请求和响应
+  - 清理 Markdown 格式
 
-编辑 `src/config.ts` 可以调整：
-- 卡牌排列参数
-- 滚动速度
-- 光标平滑度
-- 相机位置
+### 配置说明
+
+- **塔罗规则配置**：在 `createTarotDeck()` 函数中调整逆位率（默认 30%-60%）
+- **API 配置**：在 `DEEPSEEK_CONFIG` 对象中配置 API 相关设置
+- **视觉效果配置**：在 `CONFIG` 和 `AURA_PARAMS` 中调整视觉效果参数
+
+## 📄 许可证
+
+MIT License
 
 ---
 
