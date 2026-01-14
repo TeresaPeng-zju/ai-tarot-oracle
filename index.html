@@ -262,16 +262,57 @@ function createTarotDeck(rawDeck) {
     return deck;
 }
 
+// 获取资源基础路径的统一函数
+const getBasePath = () => {
+    // 方案1：优先使用 base 标签（如果存在）
+    const baseTag = document.querySelector('base');
+    if (baseTag && baseTag.href) {
+        try {
+            const baseUrl = new URL(baseTag.href);
+            let path = baseUrl.pathname;
+            return path.endsWith('/') ? path : path + '/';
+        } catch(e) {
+            // 解析失败，继续使用其他方法
+        }
+    }
+    
+    // 方案2：尝试从 script 标签的位置获取（如果HTML中嵌入了script）
+    try {
+        const scripts = document.getElementsByTagName('script');
+        if (scripts.length > 0) {
+            const lastScript = scripts[scripts.length - 1];
+            if (lastScript.src) {
+                const scriptUrl = new URL(lastScript.src, window.location.href);
+                const scriptPath = scriptUrl.pathname;
+                const lastSlash = scriptPath.lastIndexOf('/');
+                if (lastSlash > 0) {
+                    return scriptPath.substring(0, lastSlash + 1);
+                }
+            }
+        }
+    } catch(e) {
+        // 忽略错误
+    }
+    
+    // 方案3：从当前路径计算基础路径
+    const pathname = window.location.pathname;
+    // 移除文件名，只保留目录路径
+    if (pathname === '/' || pathname === '/index.html') {
+        return '/';
+    }
+    const lastSlash = pathname.lastIndexOf('/');
+    return lastSlash === 0 ? '/' : pathname.substring(0, lastSlash + 1);
+};
+
 const getImg = (path) => {
     // 如果是完整URL，直接返回
     if (path.startsWith('http://') || path.startsWith('https://')) {
         return path;
     }
-    // 使用基于当前页面位置的路径，兼容CDN部署
-    // 如果页面在根目录，使用 /assets/；如果在子目录，使用相对于当前目录的路径
-    const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+    
+    const basePath = getBasePath();
     const imgPath = `${basePath}assets/${path}`;
-    console.log('Loading image:', imgPath); // 调试信息
+    console.log('Loading image:', imgPath, 'from basePath:', basePath, 'original path:', path); // 调试信息
     return imgPath;
 }; 
 
@@ -486,16 +527,16 @@ class TarotSpace {
     }
     generateCardTexture() { const c = document.createElement('canvas'); c.width = 256; c.height = 400; const ctx = c.getContext('2d'); ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0,0,256,400); ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 10; ctx.strokeRect(10,10,236,380); ctx.beginPath(); ctx.arc(128, 200, 60, 0, Math.PI*2); ctx.stroke(); return new THREE.CanvasTexture(c); }
     loadLocalBack() { 
-        const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+        const basePath = getBasePath();
         const backPath = `${basePath}tarot-card-back.jpg`;
-        console.log('Loading card back:', backPath); // 调试信息
+        console.log('Loading card back:', backPath, 'from basePath:', basePath); // 调试信息
         this.texLoader.load(backPath, (tex) => { 
             this.backTexture = tex; 
             this.cards.forEach(group => { 
                 group.children[0].material.map = tex; 
                 group.children[0].material.needsUpdate = true; 
             }); 
-        }, undefined, (err) => console.warn("未找到牌背图片:", backPath)); 
+        }, undefined, (err) => console.warn("未找到牌背图片:", backPath, err)); 
     }
     createFrontTexture(data) { const c = document.createElement('canvas'); c.width = 512; c.height = 800; const ctx = c.getContext('2d'); ctx.fillStyle = '#f5f0e1'; ctx.fillRect(0,0,512,800); ctx.strokeStyle = '#333'; ctx.lineWidth = 15; ctx.strokeRect(20,20,472,760); ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.font = 'bold 50px serif'; ctx.fillText(data.e, 256, 300); ctx.font = '30px sans-serif'; ctx.fillStyle = '#555'; ctx.fillText(data.n, 256, 360); return new THREE.CanvasTexture(c); }
     initThree() { this.scene = new THREE.Scene(); this.camera = new THREE.PerspectiveCamera(60, this.w/this.h, 0.1, 100); this.camera.position.set(0, 0, CONFIG.cameraZ); this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }); this.renderer.setSize(this.w, this.h); this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); this.renderer.outputEncoding = THREE.LinearEncoding; this.container.appendChild(this.renderer.domElement); this.scene.add(new THREE.AmbientLight(0xffffff, 1.0)); }
@@ -657,14 +698,13 @@ class TarotSpace {
         // 始终创建img元素，即使imgUrl为空也创建（用于显示占位符或调试）
         const img = document.createElement('img');
         if (imgUrl) {
-            // 使用基于当前页面位置的路径，兼容CDN部署
-            const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
-            const fullPath = `${basePath}assets/${imgUrl}`;
+            // 使用 getImg 函数构建路径（与卡牌加载逻辑保持一致）
+            const fullPath = getImg(imgUrl);
             img.src = fullPath;
             console.log('Loading history image:', fullPath); // 调试信息
             // 添加错误处理，加载失败时显示占位符
             img.onerror = function() {
-                console.warn(`图片加载失败: ${fullPath}`);
+                console.warn(`图片加载失败: ${fullPath}`, '尝试的URL:', imgUrl);
                 this.style.display = 'none'; // 隐藏失败的图片，或显示占位符
             };
         } else {
