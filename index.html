@@ -265,6 +265,7 @@ function createTarotDeck(rawDeck) {
 const getImg = (path) => {
     // 如果是完整URL，直接返回
     if (path.startsWith('http://') || path.startsWith('https://')) {
+        console.log(path,'teresa');
         return path;
     }
     // 使用相对于当前文件的路径，确保部署后也能正常工作
@@ -602,13 +603,19 @@ class TarotSpace {
             });
         }
 
+        // 立即保存牌的信息（同步执行），确保后续可以访问
+        this.drawnCards.push({ name: data.n, isReversed: data.isReversed, img: data.url });
+        
         this.texLoader.load(getImg(data.url), (tex) => { 
             frontMesh.material.map = tex; frontMesh.material.needsUpdate = true; 
-            // 存入数据，但不立即显示UI，等归位
-            this.drawnCards.push({ name: data.n, isReversed: data.isReversed, img: data.url });
         }, undefined, () => { 
+            // 图片加载失败，使用占位纹理
             frontMesh.material.map = this.createFrontTexture(data); frontMesh.material.needsUpdate = true; 
-            this.drawnCards.push({ name: data.n, isReversed: data.isReversed, img: null });
+            // 更新已保存的记录，保留URL以便历史记录显示
+            const lastCard = this.drawnCards[this.drawnCards.length - 1];
+            if (lastCard && lastCard.name === data.n) {
+                lastCard.img = data.url; // 仍然保留URL，让addToHistory尝试加载
+            }
         });
 
         const targetRotZ = data.isReversed ? Math.PI : 0;
@@ -632,8 +639,24 @@ class TarotSpace {
         slot.className = `history-slot ${isReversed ? 'reversed' : ''}`;
         const imgBox = document.createElement('div');
         imgBox.className = 'history-img-box';
-        if (imgUrl) { const img = document.createElement('img'); img.src = "./assets/" + imgUrl; imgBox.appendChild(img); }
+        
+        // 始终创建img元素，即使imgUrl为空也创建（用于显示占位符或调试）
+        const img = document.createElement('img');
+        if (imgUrl) {
+            img.src = "./assets/" + imgUrl;
+            // 添加错误处理，加载失败时显示占位符
+            img.onerror = function() {
+                console.warn(`图片加载失败: ./assets/${imgUrl}`);
+                this.style.display = 'none'; // 隐藏失败的图片，或显示占位符
+            };
+        } else {
+            // 如果没有URL，创建一个透明的占位符
+            img.style.opacity = '0.3';
+            img.style.backgroundColor = 'rgba(212, 175, 55, 0.1)';
+        }
+        imgBox.appendChild(img);
         slot.appendChild(imgBox);
+        
         const textBox = document.createElement('div');
         textBox.className = 'history-text';
         textBox.innerHTML = cardName + (isReversed ? '<br><span class="rev-mark">逆位</span>' : '');
