@@ -265,11 +265,14 @@ function createTarotDeck(rawDeck) {
 const getImg = (path) => {
     // 如果是完整URL，直接返回
     if (path.startsWith('http://') || path.startsWith('https://')) {
-        console.log(path,'teresa');
         return path;
     }
-    // 使用相对于当前文件的路径，确保部署后也能正常工作
-    return `./assets/${path}`;
+    // 使用基于当前页面位置的路径，兼容CDN部署
+    // 如果页面在根目录，使用 /assets/；如果在子目录，使用相对于当前目录的路径
+    const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+    const imgPath = `${basePath}assets/${path}`;
+    console.log('Loading image:', imgPath); // 调试信息
+    return imgPath;
 }; 
 
 /* SHADERS */
@@ -482,7 +485,18 @@ class TarotSpace {
         return new THREE.CanvasTexture(c);
     }
     generateCardTexture() { const c = document.createElement('canvas'); c.width = 256; c.height = 400; const ctx = c.getContext('2d'); ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0,0,256,400); ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 10; ctx.strokeRect(10,10,236,380); ctx.beginPath(); ctx.arc(128, 200, 60, 0, Math.PI*2); ctx.stroke(); return new THREE.CanvasTexture(c); }
-    loadLocalBack() { this.texLoader.load('./tarot-card-back.jpg', (tex) => { this.backTexture = tex; this.cards.forEach(group => { group.children[0].material.map = tex; group.children[0].material.needsUpdate = true; }); }, undefined, (err) => console.warn("未找到牌背图片")); }
+    loadLocalBack() { 
+        const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+        const backPath = `${basePath}tarot-card-back.jpg`;
+        console.log('Loading card back:', backPath); // 调试信息
+        this.texLoader.load(backPath, (tex) => { 
+            this.backTexture = tex; 
+            this.cards.forEach(group => { 
+                group.children[0].material.map = tex; 
+                group.children[0].material.needsUpdate = true; 
+            }); 
+        }, undefined, (err) => console.warn("未找到牌背图片:", backPath)); 
+    }
     createFrontTexture(data) { const c = document.createElement('canvas'); c.width = 512; c.height = 800; const ctx = c.getContext('2d'); ctx.fillStyle = '#f5f0e1'; ctx.fillRect(0,0,512,800); ctx.strokeStyle = '#333'; ctx.lineWidth = 15; ctx.strokeRect(20,20,472,760); ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.font = 'bold 50px serif'; ctx.fillText(data.e, 256, 300); ctx.font = '30px sans-serif'; ctx.fillStyle = '#555'; ctx.fillText(data.n, 256, 360); return new THREE.CanvasTexture(c); }
     initThree() { this.scene = new THREE.Scene(); this.camera = new THREE.PerspectiveCamera(60, this.w/this.h, 0.1, 100); this.camera.position.set(0, 0, CONFIG.cameraZ); this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }); this.renderer.setSize(this.w, this.h); this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); this.renderer.outputEncoding = THREE.LinearEncoding; this.container.appendChild(this.renderer.domElement); this.scene.add(new THREE.AmbientLight(0xffffff, 1.0)); }
     initBackgroundStars() { const count = 1500; const geo = new THREE.BufferGeometry(); const pos = []; for(let i=0; i<count; i++) pos.push((Math.random()-0.5)*150, (Math.random()-0.5)*100, (Math.random()-0.5)*80-40); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); const mat = new THREE.PointsMaterial({ color: 0x888888, size: 2, sizeAttenuation: false, transparent: true, opacity: 0.8 }); this.bgStars = new THREE.Points(geo, mat); this.scene.add(this.bgStars); }
@@ -643,10 +657,14 @@ class TarotSpace {
         // 始终创建img元素，即使imgUrl为空也创建（用于显示占位符或调试）
         const img = document.createElement('img');
         if (imgUrl) {
-            img.src = "./assets/" + imgUrl;
+            // 使用基于当前页面位置的路径，兼容CDN部署
+            const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+            const fullPath = `${basePath}assets/${imgUrl}`;
+            img.src = fullPath;
+            console.log('Loading history image:', fullPath); // 调试信息
             // 添加错误处理，加载失败时显示占位符
             img.onerror = function() {
-                console.warn(`图片加载失败: ./assets/${imgUrl}`);
+                console.warn(`图片加载失败: ${fullPath}`);
                 this.style.display = 'none'; // 隐藏失败的图片，或显示占位符
             };
         } else {
