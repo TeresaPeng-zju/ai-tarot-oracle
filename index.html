@@ -3,6 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 
+    如果部署后图片无法加载，请取消下面的注释并设置正确的基础路径。
+    例如：<base href="https://tarot-oracle.edgeone.cool/">
+    或者如果部署在子目录：<base href="https://tarot-oracle.edgeone.cool/subdirectory/">
+    -->
+    <!-- <base href="https://tarot-oracle.edgeone.cool/"> -->
     <title>Tarot Oracle: The Void</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap');
@@ -270,38 +276,53 @@ const getBasePath = () => {
         try {
             const baseUrl = new URL(baseTag.href);
             let path = baseUrl.pathname;
-            return path.endsWith('/') ? path : path + '/';
+            const result = path.endsWith('/') ? path : path + '/';
+            console.log('使用 base 标签路径:', result);
+            return result;
         } catch(e) {
-            // 解析失败，继续使用其他方法
+            console.warn('base 标签解析失败:', e);
         }
     }
     
-    // 方案2：尝试从 script 标签的位置获取（如果HTML中嵌入了script）
+    // 方案2：从当前文档的完整URL计算
     try {
-        const scripts = document.getElementsByTagName('script');
-        if (scripts.length > 0) {
-            const lastScript = scripts[scripts.length - 1];
-            if (lastScript.src) {
-                const scriptUrl = new URL(lastScript.src, window.location.href);
-                const scriptPath = scriptUrl.pathname;
-                const lastSlash = scriptPath.lastIndexOf('/');
-                if (lastSlash > 0) {
-                    return scriptPath.substring(0, lastSlash + 1);
-                }
-            }
+        const currentUrl = new URL(window.location.href);
+        let pathname = currentUrl.pathname;
+        
+        console.log('当前页面路径:', pathname);
+        
+        // 移除文件名，只保留目录路径
+        if (pathname === '/' || pathname === '') {
+            console.log('检测到根目录，返回 /');
+            return '/';
         }
+        
+        // 如果路径以 .html 结尾，说明有文件名，需要移除
+        if (pathname.endsWith('.html')) {
+            const lastSlash = pathname.lastIndexOf('/');
+            if (lastSlash === 0) {
+                console.log('根目录的HTML文件，返回 /');
+                return '/'; // 根目录的文件，如 /index.html
+            }
+            const result = pathname.substring(0, lastSlash + 1);
+            console.log('HTML文件所在目录:', result);
+            return result;
+        }
+        
+        // 如果路径以 / 结尾，直接返回
+        if (pathname.endsWith('/')) {
+            console.log('路径已以 / 结尾，返回:', pathname);
+            return pathname;
+        }
+        
+        // 否则添加 /
+        const result = pathname + '/';
+        console.log('添加 / 后的路径:', result);
+        return result;
     } catch(e) {
-        // 忽略错误
-    }
-    
-    // 方案3：从当前路径计算基础路径
-    const pathname = window.location.pathname;
-    // 移除文件名，只保留目录路径
-    if (pathname === '/' || pathname === '/index.html') {
+        console.warn('无法计算基础路径，使用默认值 /', e);
         return '/';
     }
-    const lastSlash = pathname.lastIndexOf('/');
-    return lastSlash === 0 ? '/' : pathname.substring(0, lastSlash + 1);
 };
 
 const getImg = (path) => {
